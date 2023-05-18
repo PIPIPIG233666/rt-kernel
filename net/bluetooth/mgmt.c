@@ -1062,6 +1062,45 @@ static u8 create_instance_adv_data(struct hci_dev *hdev, u8 instance, u8 *ptr)
 		ptr += 3;
 	}
 
+#if defined(RTAX95Q) || defined(RTAXE95Q) || defined(RTAX56_XD4) || defined(RTAX82_XD6) || defined(RTAX82_XD6S)
+	// from base UUID 0x0000000000001000800000805F9B34FB
+	ptr[0] = 17;
+	ptr[1] = EIR_UUID128_ALL;
+	ptr[2] = 0xFB;
+	ptr[3] = 0x34;
+	ptr[4] = 0x9B;
+	ptr[5] = 0x5F;
+	ptr[6] = 0x80;
+	ptr[7] = 0x00;
+	ptr[8] = 0x00;
+	ptr[9] = 0x80;
+	ptr[10] = 0x00;
+	ptr[11] = 0x10;
+	ptr[12] = 0x00;
+	ptr[13] = 0x00;
+#if defined(RTAX95Q)
+	ptr[14] = 0x05;
+#elif defined(RTAXE95Q)
+	ptr[14] = 0x8A;
+#elif defined(RTAX56_XD4)
+	ptr[14] = 0x07;
+#elif defined(RTAX82_XD6)
+	ptr[14] = 0x08;
+#elif defined(RTAX82_XD6S)
+	ptr[14] = 0x0d;
+#else
+	ptr[14] = 0x00;
+#endif
+	ptr[15] = 0xAB;
+	ptr[16] = 0x00;
+	ptr[17] = 0x00;
+#if 1 /*AMAS*/
+	ptr[14] |= 0x80;
+#endif
+	ad_len += 18;
+	ptr += 18;
+#endif
+
 	return ad_len;
 }
 

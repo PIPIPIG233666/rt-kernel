@@ -2767,8 +2767,16 @@ static int hub_port_reset(struct usb_hub *hub, int port1,
 					USB_PORT_FEAT_C_BH_PORT_RESET);
 			usb_clear_port_feature(hub->hdev, port1,
 					USB_PORT_FEAT_C_PORT_LINK_STATE);
-			usb_clear_port_feature(hub->hdev, port1,
-					USB_PORT_FEAT_C_CONNECTION);
+            
+#if defined(CONFIG_BCM_KF_USB_HOSTS)
+			/* during reboot some times warm reset is seen and clearing this bit
+			 * is causing device detection issues*/
+			if(warm)
+				printk("+++++ BRCM skipping port_feat_c_connection for warm reset\n");
+			else
+#endif
+				usb_clear_port_feature(hub->hdev, port1,
+						USB_PORT_FEAT_C_CONNECTION);
 
 			/*
 			 * If a USB 3.0 device migrates from reset to an error

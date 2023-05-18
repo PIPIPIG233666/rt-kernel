@@ -1474,6 +1474,11 @@ static int console_trylock_for_printk(void)
 {
 	unsigned int cpu = smp_processor_id();
 
+#if defined(CONFIG_BCM_KF_PRINTK_INT_ENABLED) && defined(CONFIG_BCM_PRINTK_INT_ENABLED)
+	if(oops_in_progress || early_boot_irqs_disabled ||
+	   preempt_count() > 1 || irqs_disabled())
+		return 0;
+#endif
 	if (!console_trylock())
 		return 0;
 	/*
@@ -2143,15 +2148,26 @@ static void console_cont_flush(char *text, size_t size)
 		goto out;
 
 	len = cont_print_text(text, size);
+#if defined(CONFIG_BCM_KF_PRINTK_INT_ENABLED) && defined(CONFIG_BCM_PRINTK_INT_ENABLED)
+	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
+	call_console_drivers(cont.level, text, len);
+#else
 	raw_spin_unlock(&logbuf_lock);
 	stop_critical_timings();
 	call_console_drivers(cont.level, text, len);
 	start_critical_timings();
 	local_irq_restore(flags);
+#endif
 	return;
 out:
 	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
 }
+
+#define PROCESS_CONSOLE_UNLOCK_TIMEOUT (10)	/* msec */
+
+#ifdef PROCESS_CONSOLE_UNLOCK_TIMEOUT
+static unsigned long process_console_unlock_timeout = PROCESS_CONSOLE_UNLOCK_TIMEOUT;
+#endif /* PROCESS_CONSOLE_UNLOCK_TIMEOUT */
 
 /**
  * console_unlock - unlock the console system
@@ -2174,6 +2190,10 @@ void console_unlock(void)
 	unsigned long flags;
 	bool wake_klogd = false;
 	bool do_cond_resched, retry;
+#ifdef PROCESS_CONSOLE_UNLOCK_TIMEOUT
+	unsigned long expire = jiffies + msecs_to_jiffies(process_console_unlock_timeout);
+	bool abort = false;
+#endif /* PROCESS_CONSOLE_UNLOCK_TIMEOUT */
 
 	if (console_suspended) {
 		up_console_sem();
@@ -2219,6 +2239,13 @@ again:
 			len = 0;
 		}
 skip:
+#ifdef PROCESS_CONSOLE_UNLOCK_TIMEOUT
+		if (process_console_unlock_timeout && time_after(jiffies, expire)) {
+			abort = true;
+			break;
+		}
+#endif /* PROCESS_CONSOLE_UNLOCK_TIMEOUT */
+
 		if (console_seq == log_next_seq)
 			break;
 
@@ -2246,13 +2273,17 @@ skip:
 		console_idx = log_next(console_idx);
 		console_seq++;
 		console_prev = msg->flags;
+#if defined(CONFIG_BCM_KF_PRINTK_INT_ENABLED) && defined(CONFIG_BCM_PRINTK_INT_ENABLED)
+		raw_spin_unlock_irqrestore(&logbuf_lock, flags);
+		call_console_drivers(level, text, len);
+#else
 		raw_spin_unlock(&logbuf_lock);
 
 		stop_critical_timings();	/* don't trace print latency */
 		call_console_drivers(level, text, len);
 		start_critical_timings();
 		local_irq_restore(flags);
-
+#endif
 		if (do_cond_resched)
 			cond_resched();
 	}
@@ -2266,6 +2297,12 @@ skip:
 
 	up_console_sem();
 
+#ifdef PROCESS_CONSOLE_UNLOCK_TIMEOUT
+	if (abort) {
+		local_irq_restore(flags);
+		goto skip_retry;
+	}
+#endif /* PROCESS_CONSOLE_UNLOCK_TIMEOUT */
 	/*
 	 * Someone could have filled up the buffer again, so re-check if there's
 	 * something to flush. In case we cannot trylock the console_sem again,
@@ -2278,6 +2315,10 @@ skip:
 
 	if (retry && console_trylock())
 		goto again;
+
+#ifdef PROCESS_CONSOLE_UNLOCK_TIMEOUT
+skip_retry:
+#endif /* PROCESS_CONSOLE_UNLOCK_TIMEOUT */
 
 	if (wake_klogd)
 		wake_up_klogd();

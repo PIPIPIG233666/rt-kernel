@@ -521,14 +521,21 @@ static int __test_aead(struct crypto_aead *tfm, int enc,
 		memcpy(key, template[i].key, template[i].klen);
 
 		ret = crypto_aead_setkey(tfm, key, template[i].klen);
+#if defined(CONFIG_BCM_KF_IP)
+		if ((!ret) == template[i].fail) {
+#else
 		if (!ret == template[i].fail) {
+#endif
 			pr_err("alg: aead%s: setkey failed on test %d for %s: flags=%x\n",
 			       d, j, algo, crypto_aead_get_flags(tfm));
 			goto out;
 		} else if (ret)
 			continue;
-
+#if defined(CONFIG_BCM_KF_SPU)
+		authsize = template[i].authsize ? template[i].authsize : abs(template[i].rlen - template[i].ilen);
+#else		
 		authsize = abs(template[i].rlen - template[i].ilen);
+#endif		
 		ret = crypto_aead_setauthsize(tfm, authsize);
 		if (ret) {
 			pr_err("alg: aead%s: Failed to set authsize to %u on test %d for %s\n",
@@ -622,7 +629,11 @@ static int __test_aead(struct crypto_aead *tfm, int enc,
 		memcpy(key, template[i].key, template[i].klen);
 
 		ret = crypto_aead_setkey(tfm, key, template[i].klen);
+#if defined(CONFIG_BCM_KF_IP)
+		if ((!ret) == template[i].fail) {
+#else
 		if (!ret == template[i].fail) {
+#endif
 			pr_err("alg: aead%s: setkey failed on chunk test %d for %s: flags=%x\n",
 			       d, j, algo, crypto_aead_get_flags(tfm));
 			goto out;
@@ -868,7 +879,11 @@ static int test_cipher(struct crypto_cipher *tfm, int enc,
 
 		ret = crypto_cipher_setkey(tfm, template[i].key,
 					   template[i].klen);
+#if defined(CONFIG_BCM_KF_IP)
+		if ((!ret) == template[i].fail) {
+#else
 		if (!ret == template[i].fail) {
+#endif
 			printk(KERN_ERR "alg: cipher: setkey failed "
 			       "on test %d for %s: flags=%x\n", j,
 			       algo, crypto_cipher_get_flags(tfm));
@@ -976,7 +991,11 @@ static int __test_skcipher(struct crypto_ablkcipher *tfm, int enc,
 
 		ret = crypto_ablkcipher_setkey(tfm, template[i].key,
 					       template[i].klen);
+#if defined(CONFIG_BCM_KF_IP)
+		if ((!ret) == template[i].fail) {
+#else
 		if (!ret == template[i].fail) {
+#endif
 			pr_err("alg: skcipher%s: setkey failed on test %d for %s: flags=%x\n",
 			       d, j, algo, crypto_ablkcipher_get_flags(tfm));
 			goto out;
@@ -1043,7 +1062,11 @@ static int __test_skcipher(struct crypto_ablkcipher *tfm, int enc,
 
 		ret = crypto_ablkcipher_setkey(tfm, template[i].key,
 					       template[i].klen);
+#if defined(CONFIG_BCM_KF_IP)
+		if ((!ret) == template[i].fail) {
+#else
 		if (!ret == template[i].fail) {
+#endif
 			pr_err("alg: skcipher%s: setkey failed on chunk test %d for %s: flags=%x\n",
 			       d, j, algo, crypto_ablkcipher_get_flags(tfm));
 			goto out;
@@ -2704,6 +2727,42 @@ static const struct alg_test_desc alg_test_descs[] = {
 		.fips_allowed = 1,
 		.test = alg_test_null,
 	}, {
+#if defined(CONFIG_BCM_KF_SPU)		
+		.alg = "dtls(hmac(sha1),cbc(aes))",
+		.test = alg_test_aead,
+		.fips_allowed = 1,
+		.suite = {
+			.aead = {
+				.enc = {
+					.vecs =
+					dtls_hmac_sha1_aes_cbc_enc,
+					.count = DTLS_SHA1_AES_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = dtls_hmac_sha1_aes_cbc_dec,
+					.count = DTLS_SHA1_AES_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+		.alg = "dtls(hmac(sha256),cbc(aes))",
+		.test = alg_test_aead,
+		.fips_allowed = 1,
+		.suite = {
+			.aead = {
+				.enc = {
+					.vecs =
+					dtls_hmac_sha256_aes_cbc_enc,
+					.count = DTLS_SHA256_AES_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = dtls_hmac_sha256_aes_cbc_dec,
+					.count = DTLS_SHA256_AES_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+#endif		
 		.alg = "ecb(__aes-aesni)",
 		.test = alg_test_null,
 		.fips_allowed = 1,
@@ -3710,7 +3769,9 @@ test_done:
 	return rc;
 
 notest:
+#if !defined(CONFIG_BCM_KF_IP)
 	printk(KERN_INFO "alg: No test for %s (%s)\n", alg, driver);
+#endif
 	return 0;
 non_fips_alg:
 	return -EINVAL;

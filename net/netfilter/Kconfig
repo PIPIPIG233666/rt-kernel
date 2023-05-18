@@ -76,7 +76,6 @@ config NF_CONNTRACK_SECMARK
 config NF_CONNTRACK_ZONES
 	bool  'Connection tracking zones'
 	depends on NETFILTER_ADVANCED
-	depends on NETFILTER_XT_TARGET_CT
 	help
 	  This option enables support for connection tracking zones.
 	  Normally, each connection needs to have a unique system wide
@@ -128,10 +127,11 @@ config NF_CONNTRACK_TIMESTAMP
 	  If unsure, say `N'.
 
 config NF_CONNTRACK_LABELS
-	bool
+	bool "Connection tracking labels"
 	help
 	  This option enables support for assigning user-defined flag bits
-	  to connection tracking entries.  It selected by the connlabel match.
+	  to connection tracking entries.  It can be used with xtables connlabel
+	  match and the nftables ct expression.
 
 config NF_CT_PROTO_DCCP
 	tristate 'DCCP protocol connection tracking support'
@@ -165,6 +165,15 @@ config NF_CT_PROTO_UDPLITE
 	  tracking code will be able to do state tracking on UDP-Lite
 	  connections.
 
+	  To compile it as a module, choose M here.  If unsure, say N.
+
+config NF_CT_PROTO_ESP
+	tristate 'ESP protocol connection tracking support'
+	depends on NETFILTER_ADVANCED && BCM_KF_NETFILTER
+	help
+	  With this option enabled, the layer 3 ESP protocol 
+	  tracking will be able to do tracking on ESP connections
+	  
 	  To compile it as a module, choose M here.  If unsure, say N.
 
 config NF_CONNTRACK_AMANDA
@@ -312,6 +321,16 @@ config NF_CONNTRACK_SIP
 
 	  To compile it as a module, choose M here.  If unsure, say N.
 
+config NF_CONNTRACK_IPSEC
+	tristate "IPSEC protocol support"
+	depends on BCM_KF_NETFILTER
+	default m if NETFILTER_ADVANCED=n
+	help
+	  IPSec is used for for securing IP communications by authenticating and 
+	  encrypting each IP packet of a communication session
+	  
+	  To compile it as a module, choose M here.  If unsure, say N.
+
 config NF_CONNTRACK_TFTP
 	tristate "TFTP protocol support"
 	depends on NETFILTER_ADVANCED
@@ -322,6 +341,25 @@ config NF_CONNTRACK_TFTP
 	  you will need this.
 
 	  To compile it as a module, choose M here.  If unsure, say N.
+
+#BRCM begin
+config NF_DYNDSCP
+  tristate  "Dynamic DSCP Mangling support "
+  depends on NF_CONNTRACK && BCM_KF_NETFILTER
+  default n
+  help
+  	This option enables support for dynamic DSCP, i.e tos will be derived from 
+  	tos value of WAN packets of each connection.
+
+config NF_CONNTRACK_RTSP
+	tristate "RTSP protocol support"
+	depends on NF_CONNTRACK && BCM_KF_NETFILTER
+	help
+	  RTSP (Real Time Streaming Protocol) support.
+
+	  To compile it as a module, choose M here.  If unsure, say N.
+
+#BRCM end
 
 config NF_CT_NETLINK
 	tristate 'Connection tracking netlink interface'
@@ -386,6 +424,7 @@ config NF_NAT_PROTO_SCTP
 	depends on NF_NAT && NF_CT_PROTO_SCTP
 	select LIBCRC32C
 
+
 config NF_NAT_AMANDA
 	tristate
 	depends on NF_CONNTRACK && NF_NAT
@@ -396,6 +435,11 @@ config NF_NAT_FTP
 	depends on NF_CONNTRACK && NF_NAT
 	default NF_NAT && NF_CONNTRACK_FTP
 
+config NF_NAT_RTSP
+	tristate
+	depends on BCM_KF_NETFILTER && IP_NF_IPTABLES && NF_CONNTRACK && NF_NAT
+	default NF_NAT && NF_CONNTRACK_RTSP
+	
 config NF_NAT_IRC
 	tristate
 	depends on NF_CONNTRACK && NF_NAT
@@ -771,6 +815,18 @@ config NETFILTER_XT_TARGET_LOG
 
 	  To compile it as a module, choose M here.  If unsure, say N.
 
+config NETFILTER_XT_TARGET_IMQ
+	tristate '"IMQ" target support'
+	depends on NETFILTER_XTABLES
+	depends on IP_NF_MANGLE || IP6_NF_MANGLE
+	select IMQ
+	default m if NETFILTER_ADVANCED=n
+	help
+	  This option adds a `IMQ' target which is used to specify if and
+	  to which imq device packets should get enqueued/dequeued.
+
+	  To compile it as a module, choose M here.  If unsure, say N.
+
 config NETFILTER_XT_TARGET_MARK
 	tristate '"MARK" target support'
 	depends on NETFILTER_ADVANCED
@@ -934,6 +990,16 @@ config NETFILTER_XT_TARGET_TCPOPTSTRIP
 	help
 	  This option adds a "TCPOPTSTRIP" target, which allows you to strip
 	  TCP options from TCP packets.
+
+config NETFILTER_XT_TARGET_SKIPLOG
+	tristate '"SKIPLOG" target support'
+	depends on NETFILTER_XTABLES && (IPV6 || IPV6=n) && BCM_KF_NETFILTER
+	---help---
+	  configuration like:
+
+	  iptables -A FORWARD -p tcp -j SKIPLOG
+
+	  To compile it as a module, choose M here.  If unsure, say N.
 
 # alphabetically ordered list of matches
 
@@ -1438,6 +1504,60 @@ config NETFILTER_XT_MATCH_U32
 
 	  Details and examples are in the kernel module source.
 
+config NETFILTER_XT_MATCH_WEBSTR
+	tristate  '"webstr" match support'
+	depends on NETFILTER_XTABLES
+	help
+	  This option adds a `webstr' match, which allows you to look for
+	  pattern matchings in http stream.
+
+	  To compile it as a module, choose M here.  If unsure, say N.
+
+config NETFILTER_XT_MATCH_CONDITION
+	tristate  '"condition" match support'
+	depends on NETFILTER_XTABLES
+	help
+	  This option allows you to match firewall rules against condition
+	  variables stored in the /proc/net/nf_condition directory.
+
+	  N.B.: older versions used /proc/net/ipt_condition. You can
+	  reenable it with "compat_dir_name".
+
+	  If you want to compile it as a module, say M here and read
+	  Documentation/modules.txt.  If unsure, say `N'.
+
+config NETFILTER_XT_MATCH_GEOIP
+	tristate  '"geoip" match support'
+	depends on NETFILTER_XTABLES
+	help
+	  This option allows you to match a packet by its source or
+	  destination country.  Basically, you need a country's
+	  database containing all subnets and associated countries.
+
+	  For the complete procedure and understanding, read :
+	  http://people.netfilter.org/acidfu/geoip/howto/geoip-HOWTO.html
+
+	  If you want to compile it as a module, say M here and read
+	  <file:Documentation/modules.txt>.  The module will be
+	  called `ipt_geoip'.  If unsure, say `N'.
+
+config NETFILTER_XT_MATCH_BLOG
+	tristate '"blog" blog match support'
+	depends on NETFILTER_XTABLES && BCM_KF_NETFILTER && BLOG
+	help
+	  This option adds a `blog' match, which allows you to match based
+	  on blog fields.
+
+	  To compile it as a module, choose M here.  If unsure, say N.
+
+config NETFILTER_XT_MATCH_FLOWLABEL
+	tristate '"flowlabel" match support'
+	depends on NETFILTER_XTABLES && BCM_KF_NETFILTER
+	help
+	  This option adds a `flowlabel' match, which allows you to match based
+	  on IPv6 flowlabel fields.
+
+	  To compile it as a module, choose M here.  If unsure, say N.
 endif # NETFILTER_XTABLES
 
 endmenu
@@ -1445,3 +1565,5 @@ endmenu
 source "net/netfilter/ipset/Kconfig"
 
 source "net/netfilter/ipvs/Kconfig"
+
+source "net/netfilter/fltr/Kconfig"

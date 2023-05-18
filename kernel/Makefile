@@ -2,6 +2,7 @@
 # Makefile for the linux kernel.
 #
 
+
 obj-y     = fork.o exec_domain.o panic.o \
 	    cpu.o exit.o softirq.o resource.o \
 	    sysctl.o sysctl_binary.o capability.o ptrace.o user.o \
@@ -78,7 +79,9 @@ obj-$(CONFIG_TASK_DELAY_ACCT) += delayacct.o
 obj-$(CONFIG_TASKSTATS) += taskstats.o tsacct.o
 obj-$(CONFIG_TRACEPOINTS) += tracepoint.o
 obj-$(CONFIG_LATENCYTOP) += latencytop.o
-obj-$(CONFIG_ELFCORE) += elfcore.o
+obj-$(CONFIG_BINFMT_ELF) += elfcore.o
+obj-$(CONFIG_COMPAT_BINFMT_ELF) += elfcore.o
+obj-$(CONFIG_BINFMT_ELF_FDPIC) += elfcore.o
 obj-$(CONFIG_FUNCTION_TRACER) += trace/
 obj-$(CONFIG_TRACING) += trace/
 obj-$(CONFIG_TRACE_CLOCK) += trace/
@@ -87,6 +90,10 @@ obj-$(CONFIG_TRACEPOINTS) += trace/
 obj-$(CONFIG_IRQ_WORK) += irq_work.o
 obj-$(CONFIG_CPU_PM) += cpu_pm.o
 obj-$(CONFIG_BPF) += bpf/
+
+ifdef BCM_KF # defined(CONFIG_BCM_KF_LOG)
+obj-y += bcm_log.o
+endif # BCM_KF
 
 obj-$(CONFIG_PERF_EVENTS) += events/
 

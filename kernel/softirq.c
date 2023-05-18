@@ -29,6 +29,9 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/irq.h>
+#if defined(CONFIG_BCM_KF_BUZZZ) && defined(CONFIG_BUZZZ_KEVT)
+#include <linux/buzzz.h>
+#endif
 
 /*
    - No shared variables, all the data are CPU local.
@@ -76,6 +79,19 @@ static void wakeup_softirqd(void)
 	if (tsk && tsk->state != TASK_RUNNING)
 		wake_up_process(tsk);
 }
+
+#if defined(CONFIG_BCM_KF_ARM_BCM963XX) && defined(CONFIG_BCM947189)
+/*
+ * If ksoftirqd is scheduled, we do not want to process pending softirqs
+ * right now. Let ksoftirqd handle this at its own rate, to get fairness.
+ */
+static bool ksoftirqd_running(void)
+{
+	struct task_struct *tsk = __this_cpu_read(ksoftirqd);
+
+	return tsk && (tsk->state == TASK_RUNNING);
+}
+#endif
 
 /*
  * preempt_count and SOFTIRQ_OFFSET usage:
@@ -270,7 +286,13 @@ restart:
 		kstat_incr_softirqs_this_cpu(vec_nr);
 
 		trace_softirq_entry(vec_nr);
+#if defined(CONFIG_BCM_KF_BUZZZ) && defined(CONFIG_BUZZZ_KEVT)
+		BUZZZ_KNL3(SIRQ_ENT, 0, h->action);
+#endif
 		h->action(h);
+#if defined(CONFIG_BCM_KF_BUZZZ) && defined(CONFIG_BUZZZ_KEVT)
+		BUZZZ_KNL3(SIRQ_EXT, 0, h->action);
+#endif
 		trace_softirq_exit(vec_nr);
 		if (unlikely(prev_count != preempt_count())) {
 			pr_err("huh, entered softirq %u %s %p with preempt_count %08x, exited with %08x?\n",
@@ -312,8 +334,11 @@ asmlinkage __visible void do_softirq(void)
 	local_irq_save(flags);
 
 	pending = local_softirq_pending();
-
+#if defined(CONFIG_BCM_KF_ARM_BCM963XX) && defined(CONFIG_BCM947189)
+	if (pending && !ksoftirqd_running())
+#else
 	if (pending)
+#endif
 		do_softirq_own_stack();
 
 	local_irq_restore(flags);
@@ -340,6 +365,10 @@ void irq_enter(void)
 
 static inline void invoke_softirq(void)
 {
+#if defined(CONFIG_BCM_KF_ARM_BCM963XX) && defined(CONFIG_BCM947189)
+	if (ksoftirqd_running())
+		return;
+#endif
 	if (!force_irqthreads) {
 #ifdef CONFIG_HAVE_IRQ_EXIT_ON_IRQ_STACK
 		/*

@@ -88,6 +88,14 @@ int ieee80211_channel_to_frequency(int chan, enum ieee80211_band band)
 		if (chan < 5)
 			return 56160 + chan * 2160;
 		break;
+#ifdef CONFIG_BCM_KF_NL80211_6G_BAND_SUPPORT
+	case IEEE80211_BAND_6GHZ:
+		if (chan == 2)
+			return 5935;
+		else if (chan >= 1 && chan <= 233)
+			return 5950 + chan * 5;
+		break;
+#endif /* CONFIG_BCM_KF_NL80211_6G_BAND_SUPPORT */
 	default:
 		;
 	}
@@ -104,6 +112,12 @@ int ieee80211_frequency_to_channel(int freq)
 		return (freq - 2407) / 5;
 	else if (freq >= 4910 && freq <= 4980)
 		return (freq - 4000) / 5;
+#ifdef CONFIG_BCM_KF_NL80211_6G_BAND_SUPPORT
+	else if (freq == 5935)
+		return 2;
+	else if (freq >= 5955 && freq <= 7125)
+		return (freq - 5950) / 5;
+#endif /* CONFIG_BCM_KF_NL80211_6G_BAND_SUPPORT */
 	else if (freq <= 45000) /* DMG band lower limit */
 		return (freq - 5000) / 5;
 	else if (freq >= 58320 && freq <= 64800)
@@ -142,6 +156,9 @@ static void set_mandatory_flags_band(struct ieee80211_supported_band *sband,
 	int i, want;
 
 	switch (band) {
+#ifdef CONFIG_BCM_KF_NL80211_6G_BAND_SUPPORT
+	case IEEE80211_BAND_6GHZ:
+#endif /* CONFIG_BCM_KF_NL80211_6G_BAND_SUPPORT */
 	case IEEE80211_BAND_5GHZ:
 		want = 3;
 		for (i = 0; i < sband->n_bitrates; i++) {
@@ -218,7 +235,11 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 				   struct key_params *params, int key_idx,
 				   bool pairwise, const u8 *mac_addr)
 {
+#ifndef CONFIG_BCM_KF_CFG80211_BACKPORT
 	if (key_idx > 5)
+#else
+	if (key_idx > 7)
+#endif /* CONFIG_BCM_KF_CFG80211_BACKPORT */
 		return -EINVAL;
 
 	if (!pairwise && mac_addr && !(rdev->wiphy.flags & WIPHY_FLAG_IBSS_RSN))
@@ -989,6 +1010,9 @@ int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 			if (dev->ieee80211_ptr->use_4addr)
 				break;
 			/* fall through */
+#if defined(CONFIG_BCM_KF_WL) && defined(CONFIG_BCM_HOSTAPD)
+			break;
+#endif /* CONFIG_BCM_KF_WL && CONFIG_BCM_HOSTAPD */
 		case NL80211_IFTYPE_OCB:
 		case NL80211_IFTYPE_P2P_CLIENT:
 		case NL80211_IFTYPE_ADHOC:
@@ -1071,7 +1095,11 @@ static u32 cfg80211_calculate_bitrate_60g(struct rate_info *rate)
 
 static u32 cfg80211_calculate_bitrate_vht(struct rate_info *rate)
 {
+#ifdef CONFIG_BCM_KF_WL_HOSTAPD
+	static const u32 base[4][12] = {
+#else
 	static const u32 base[4][10] = {
+#endif /* CONFIG_BCM_KF_WL_HOSTAPD */
 		{   6500000,
 		   13000000,
 		   19500000,
@@ -1081,7 +1109,14 @@ static u32 cfg80211_calculate_bitrate_vht(struct rate_info *rate)
 		   58500000,
 		   65000000,
 		   78000000,
+#ifdef CONFIG_BCM_KF_WL_HOSTAPD
+ 		/* not in the spec, but some devices use this: */
+		   86500000,
+		   97500000,
+		  108300000,
+#else
 		   0,
+#endif /* CONFIG_BCM_KF_WL_HOSTAPD */
 		},
 		{  13500000,
 		   27000000,
@@ -1093,6 +1128,10 @@ static u32 cfg80211_calculate_bitrate_vht(struct rate_info *rate)
 		  135000000,
 		  162000000,
 		  180000000,
+#ifdef CONFIG_BCM_KF_WL_HOSTAPD
+		  202500000,
+		  225000000,
+#endif /* CONFIG_BCM_KF_WL_HOSTAPD */
 		},
 		{  29300000,
 		   58500000,
@@ -1104,6 +1143,10 @@ static u32 cfg80211_calculate_bitrate_vht(struct rate_info *rate)
 		  292500000,
 		  351000000,
 		  390000000,
+#ifdef CONFIG_BCM_KF_WL_HOSTAPD
+		  438800000,
+		  487500000,
+#endif /* CONFIG_BCM_KF_WL_HOSTAPD */
 		},
 		{  58500000,
 		  117000000,
@@ -1115,13 +1158,22 @@ static u32 cfg80211_calculate_bitrate_vht(struct rate_info *rate)
 		  585000000,
 		  702000000,
 		  780000000,
+#ifdef CONFIG_BCM_KF_WL_HOSTAPD
+		  877500000,
+		  975000000,
+#endif /* CONFIG_BCM_KF_WL_HOSTAPD */
 		},
 	};
 	u32 bitrate;
 	int idx;
 
+#ifdef CONFIG_BCM_KF_WL_HOSTAPD
+	if (WARN_ON_ONCE(rate->mcs > 11))
+		return 0;
+#else
 	if (WARN_ON_ONCE(rate->mcs > 9))
 		return 0;
+#endif /* CONFIG_BCM_KF_WL_HOSTAPD */
 
 	switch (rate->bw) {
 	case RATE_INFO_BW_160:

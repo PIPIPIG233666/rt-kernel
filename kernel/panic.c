@@ -69,6 +69,7 @@ void __weak panic_smp_self_stop(void)
  *
  *	This function never returns.
  */
+
 void panic(const char *fmt, ...)
 {
 	static DEFINE_SPINLOCK(panic_lock);
@@ -157,7 +158,6 @@ void panic(const char *fmt, ...)
 	 */
 	debug_locks_off();
 	console_flush_on_panic();
-
 	if (!panic_blink)
 		panic_blink = no_blink;
 

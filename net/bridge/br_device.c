@@ -21,6 +21,35 @@
 
 #include <asm/uaccess.h>
 #include "br_private.h"
+#include <linux/nbuff.h>
+
+#if defined(CONFIG_BCM_KF_BLOG) && defined(CONFIG_BLOG)
+#include <linux/blog.h>
+#endif
+#if defined(CONFIG_BCM_KF_WL)
+#if defined(PKTC) || defined(PKTC_TBL)
+#include <osl.h>
+#include <wl_pktc.h>
+extern unsigned long (*wl_pktc_req_hook)(int req_id, unsigned long param0, unsigned long param1, unsigned long param2);
+#endif /* PKTC || PKTC_TBL */
+#include <linux/bcm_skb_defines.h>
+#endif
+
+fwdcb_t br_fwdcb = NULL;
+
+int
+br_fwdcb_register(fwdcb_t fwdcb)
+{
+	if (fwdcb) {
+		br_fwdcb = fwdcb;
+		return 0;
+	}
+	br_fwdcb  = NULL;
+	return 0;
+}
+EXPORT_SYMBOL(br_fwdcb_register);
+
+#define DEV_ISWAN(dev) (dev ? (dev->priv_flags & IFF_WANDEV) : 0)
 
 #define COMMON_FEATURES (NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HIGHDMA | \
 			 NETIF_F_GSO_MASK | NETIF_F_HW_CSUM)
@@ -41,12 +70,47 @@ netdev_tx_t br_dev_xmit(struct sk_buff *skb, struct net_device *dev)
 	const struct nf_br_ops *nf_ops;
 	u16 vid = 0;
 
+	if (BROADSTREAM_IQOS_ENABLE())
+	{
+		if (IS_FKBUFF_PTR(skb)){
+			skb = bcm_iqoshdl_wrapper(dev, skb);
+			if (skb == FKB_FRM_GSO) {
+				goto lock_return;
+			}
+
+			if (skb == NULL) {
+				return NETDEV_TX_OK;
+			}
+			goto skb_from_fastpath;
+		} else if (IS_SKBUFF_PTR(skb) && (skb->dev == NULL)) {
+			/*from fc_stack(), frag_fkb_dev4: skb->dev is NULL */
+			skb->dev = dev;
+skb_from_fastpath:
+			skb_reset_network_header(skb);
+			BR_INPUT_SKB_CB(skb)->brdev = dev;
+			PKTSETDEVQXMIT(skb);
+			/* For broadstream iqos cb function */
+			if (br_fwdcb && (br_fwdcb(skb, dev) == PKT_DROP)) {
+				nbuff_free(SKBUFF_2_PNBUFF(skb));
+				goto lock_return;
+			}
+			dev_queue_xmit(skb);
+lock_return:
+			return NETDEV_TX_OK;
+		}
+	}
 	rcu_read_lock();
 	nf_ops = rcu_dereference(nf_br_ops);
 	if (nf_ops && nf_ops->br_dev_xmit_hook(skb)) {
 		rcu_read_unlock();
 		return NETDEV_TX_OK;
 	}
+
+#if defined(CONFIG_BCM_KF_BLOG) && defined(CONFIG_BLOG)
+	blog_lock();
+	blog_link(IF_DEVICE, blog_ptr(skb), (void*)dev, DIR_TX, skb->len);
+	blog_unlock();
+#endif
 
 	u64_stats_update_begin(&brstats->syncp);
 	brstats->tx_packets++;
@@ -55,8 +119,10 @@ netdev_tx_t br_dev_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	BR_INPUT_SKB_CB(skb)->brdev = dev;
 
-	skb_reset_mac_header(skb);
-	skb_pull(skb, ETH_HLEN);
+	if (is_broadcast_ether_addr(dest) || is_multicast_ether_addr(dest) ) {
+		skb_reset_mac_header(skb);
+		skb_pull(skb, ETH_HLEN);
+	}
 
 	if (!br_allowed_ingress(br, br_get_vlan_info(br), skb, &vid))
 		goto out;
@@ -80,9 +146,60 @@ netdev_tx_t br_dev_xmit(struct sk_buff *skb, struct net_device *dev)
 		else
 			br_flood_deliver(br, skb, false);
 	} else if ((dst = __br_fdb_get(br, dest, vid)) != NULL)
+#if defined(CONFIG_BCM_KF_BLOG) && defined(CONFIG_BLOG)
+	{
+		blog_lock();
+		blog_link(BRIDGEFDB, blog_ptr(skb), (void*)dst, BLOG_PARAM1_DSTFDB, br->dev->ifindex);
+		blog_unlock();
+#if defined(CONFIG_BCM_KF_WL)
+#if defined(PKTC) || defined(PKTC_TBL)
+		if (wl_pktc_req_hook && (dst->dst != NULL) &&
+			(BLOG_GET_PHYTYPE(dst->dst->dev->path.hw_port_type) == BLOG_WLANPHY) && 
+			wl_pktc_req_hook(PKTC_TBL_GET_TX_MODE, 0, 0, 0))
+		{
+			struct net_device *dst_dev_p = dst->dst->dev;
+			unsigned long chainIdx;
+
+			chainIdx = wl_pktc_req_hook(PKTC_TBL_UPDATE, (unsigned long)&(dst->addr.addr[0]), (unsigned long)dst_dev_p, 0);
+			if (chainIdx != PKTC_INVALID_CHAIN_IDX)
+			{
+				// Update chainIdx in blog
+				if (skb->blog_p != NULL)
+				{
+					skb->blog_p->wfd.nic_ucast.is_tx_hw_acc_en = 1;
+					skb->blog_p->wfd.nic_ucast.is_wfd = 1;
+					skb->blog_p->wfd.nic_ucast.is_chain = 1;
+					skb->blog_p->wfd.nic_ucast.wfd_idx = ((chainIdx & PKTC_WFD_IDX_BITMASK) >> PKTC_WFD_IDX_BITPOS);
+					skb->blog_p->wfd.nic_ucast.chain_idx = chainIdx;
+					//printk("%s: Added ChainEntryIdx 0x%x Dev %s blogSrcAddr 0x%x blogDstAddr 0x%x DstMac %x:%x:%x:%x:%x:%x "
+					//       "wfd_q %d wl_metadata %d wl 0x%x\n", __FUNCTION__,
+					//        chainIdx, dst->dst->dev->name, skb->blog_p->rx.tuple.saddr, skb->blog_p->rx.tuple.daddr,
+					//        dst->addr.addr[0], dst->addr.addr[1], dst->addr.addr[2], dst->addr.addr[3], dst->addr.addr[4],
+					//        dst->addr.addr[5], skb->blog_p->wfd_queue, skb->blog_p->wl_metadata, skb->blog_p->wl);
+				}
+			}
+		}
+#endif /* defined(PKTC) || defined(PKTC_TBL) */
+#endif /* defined(CONFIG_BCM_KF_WL) */
+		if (BROADSTREAM_IQOS_ENABLE()) {
+			if (blog_ptr(skb) && DEV_ISWAN(((struct net_device *)(blog_ptr(skb)->rx_dev_p)))) {
+	       		blog_emit(skb, dev, TYPE_ETH, 0, BLOG_ENETPHY); /* CONFIG_BLOG */
+			}
+		}
+		skb_reset_mac_header(skb);
+		skb_pull(skb, ETH_HLEN);
+
 		br_deliver(dst->dst, skb);
-	else
+	}        
+#else
+		br_deliver(dst->dst, skb);
+#endif
+	else {
+		PKTCLRDEVQXMIT(skb);
+		skb_reset_mac_header(skb);
+		skb_pull(skb, ETH_HLEN);
 		br_flood_deliver(br, skb, true);
+	}
 
 out:
 	rcu_read_unlock();
@@ -170,7 +287,6 @@ static struct rtnl_link_stats64 *br_get_stats64(struct net_device *dev,
 	stats->tx_packets = sum.tx_packets;
 	stats->rx_bytes   = sum.rx_bytes;
 	stats->rx_packets = sum.rx_packets;
-
 	return stats;
 }
 
@@ -368,6 +484,10 @@ void br_dev_setup(struct net_device *dev)
 	eth_hw_addr_random(dev);
 	ether_setup(dev);
 
+#if defined(CONFIG_BCM_KF_BLOG) && defined(CONFIG_BLOG)
+	dev->blog_stats_flags |= BLOG_DEV_STAT_FLAG_INCLUDE_ALL;
+#endif
+
 	dev->netdev_ops = &br_netdev_ops;
 	dev->destructor = br_dev_free;
 	dev->ethtool_ops = &br_ethtool_ops;
@@ -400,8 +520,20 @@ void br_dev_setup(struct net_device *dev)
 	br->bridge_hello_time = br->hello_time = 2 * HZ;
 	br->bridge_forward_delay = br->forward_delay = 15 * HZ;
 	br->ageing_time = 300 * HZ;
+#if defined(CONFIG_BCM_KF_BRIDGE_COUNTERS)
+	br->mac_entry_discard_counter = 0;
+#endif
 
 	br_netfilter_rtable_init(br);
 	br_stp_timer_init(br);
 	br_multicast_init(br);
+
+#if defined(CONFIG_BCM_KF_BRIDGE_MAC_FDB_LIMIT)
+	br->num_fdb_entries = 0;
+#endif
+
+#if defined(CONFIG_BCM_KF_BRIDGE_MAC_FDB_LIMIT) && defined(CONFIG_BCM_BRIDGE_MAC_FDB_LIMIT)
+	br->max_br_fdb_entries = BR_MAX_FDB_ENTRIES;
+	br->used_br_fdb_entries = 0;
+#endif
 }

@@ -173,6 +173,22 @@ BRPORT_ATTR_FLAG(unicast_flood, BR_FLOOD);
 BRPORT_ATTR_FLAG(proxyarp, BR_PROXYARP);
 BRPORT_ATTR_FLAG(proxyarp_wifi, BR_PROXYARP_WIFI);
 
+static ssize_t show_isolate_mode(struct net_bridge_port *p, char *buf)
+{
+	int isolate_mode = (p->flags & BR_ISOLATE_MODE) ? 1 : 0;
+	return sprintf(buf, "%d\n", isolate_mode);
+}
+static int store_isolate_mode(struct net_bridge_port *p, unsigned long v)
+{
+	if (v)
+		p->flags |= BR_ISOLATE_MODE;
+	else
+		p->flags &= ~BR_ISOLATE_MODE;
+	return 0;
+}
+static BRPORT_ATTR(isolate_mode, S_IRUGO | S_IWUSR,
+		   show_isolate_mode, store_isolate_mode);
+
 #ifdef CONFIG_BRIDGE_IGMP_SNOOPING
 static ssize_t show_multicast_router(struct net_bridge_port *p, char *buf)
 {
@@ -189,6 +205,37 @@ static BRPORT_ATTR(multicast_router, S_IRUGO | S_IWUSR, show_multicast_router,
 
 BRPORT_ATTR_FLAG(multicast_fast_leave, BR_MULTICAST_FAST_LEAVE);
 #endif
+
+#if defined(CONFIG_BCM_KF_BRIDGE_MAC_FDB_LIMIT) && defined(CONFIG_BCM_BRIDGE_MAC_FDB_LIMIT)
+static ssize_t show_used_num_fdb_entries(struct net_bridge_port *p, char *buf)
+{
+	return sprintf(buf, "%d\n", p->num_port_fdb_entries);
+}
+static BRPORT_ATTR(used_fdb_entries, S_IRUGO, show_used_num_fdb_entries, NULL);
+
+static ssize_t show_max_num_fdb_entries(struct net_bridge_port *p, char *buf)
+{
+	return sprintf(buf, "%d\n", p->max_port_fdb_entries);
+}
+
+int store_max_num_fdb_entries(struct net_bridge_port *p, unsigned long maxentries)
+{
+	return br_set_fdb_limit(p->br, p, 1, 0, (int)maxentries);
+}
+static BRPORT_ATTR(max_fdb_entries, S_IRUGO | S_IWUSR, show_max_num_fdb_entries, store_max_num_fdb_entries);
+
+static ssize_t show_min_num_fdb_entries(struct net_bridge_port *p, char *buf)
+{
+	return sprintf(buf, "%d\n", p->min_port_fdb_entries);
+}
+
+int store_min_num_fdb_entries(struct net_bridge_port *p, unsigned long minentries)
+{
+	return br_set_fdb_limit(p->br, p, 1, 1, (int)minentries);
+}
+static BRPORT_ATTR(min_fdb_entries, S_IRUGO | S_IWUSR, show_min_num_fdb_entries, store_min_num_fdb_entries);
+#endif
+
 
 static const struct brport_attribute *brport_attrs[] = {
 	&brport_attr_path_cost,
@@ -217,6 +264,12 @@ static const struct brport_attribute *brport_attrs[] = {
 #endif
 	&brport_attr_proxyarp,
 	&brport_attr_proxyarp_wifi,
+#if defined(CONFIG_BCM_KF_BRIDGE_MAC_FDB_LIMIT) && defined(CONFIG_BCM_BRIDGE_MAC_FDB_LIMIT)
+	&brport_attr_used_fdb_entries,
+	&brport_attr_max_fdb_entries,
+	&brport_attr_min_fdb_entries,
+#endif
+	&brport_attr_isolate_mode,
 	NULL
 };
 

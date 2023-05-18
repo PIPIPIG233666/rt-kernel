@@ -71,6 +71,9 @@
 #define UART_DR_ERROR		(UART011_DR_OE|UART011_DR_BE|UART011_DR_PE|UART011_DR_FE)
 #define UART_DUMMY_DR_RX	(1 << 16)
 
+#if defined(CONFIG_BCM_KF_CONSOLE_BAUD)
+extern int kerSysIsIkosBootSet(void);
+#endif
 /* There is by now at least one vendor with differing details, so handle it */
 struct vendor_data {
 	unsigned int		ifls;
@@ -1774,8 +1777,16 @@ pl011_set_termios(struct uart_port *port, struct ktermios *termios,
 	/*
 	 * Ask the core to calculate the divisor for us.
 	 */
+#if defined(CONFIG_BCM_KF_CONSOLE_BAUD)
+	if (kerSysIsIkosBootSet() == 1)
+		baud = 1562500;
+	else
+		baud = uart_get_baud_rate(port, termios, old, 0,
+                  port->uartclk / clkdiv);
+#else
 	baud = uart_get_baud_rate(port, termios, old, 0,
 				  port->uartclk / clkdiv);
+#endif
 #ifdef CONFIG_DMA_ENGINE
 	/*
 	 * Adjust RX DMA polling rate with baud rate if not specified.
@@ -1995,11 +2006,12 @@ pl011_console_write(struct console *co, const char *s, unsigned int count)
 {
 	struct uart_amba_port *uap = amba_ports[co->index];
 	unsigned int status, old_cr, new_cr;
+#if !defined(CONFIG_BCM_KF_PRINTK_INT_ENABLED) || !defined(CONFIG_BCM_PRINTK_INT_ENABLED)
 	unsigned long flags;
 	int locked = 1;
-
+#endif
 	clk_enable(uap->clk);
-
+#if !defined(CONFIG_BCM_KF_PRINTK_INT_ENABLED) || !defined(CONFIG_BCM_PRINTK_INT_ENABLED)
 	local_irq_save(flags);
 	if (uap->port.sysrq)
 		locked = 0;
@@ -2007,7 +2019,7 @@ pl011_console_write(struct console *co, const char *s, unsigned int count)
 		locked = spin_trylock(&uap->port.lock);
 	else
 		spin_lock(&uap->port.lock);
-
+#endif
 	/*
 	 *	First save the CR then disable the interrupts
 	 */
@@ -2026,11 +2038,11 @@ pl011_console_write(struct console *co, const char *s, unsigned int count)
 		status = readw(uap->port.membase + UART01x_FR);
 	} while (status & UART01x_FR_BUSY);
 	writew(old_cr, uap->port.membase + UART011_CR);
-
+#if !defined(CONFIG_BCM_KF_PRINTK_INT_ENABLED) || !defined(CONFIG_BCM_PRINTK_INT_ENABLED)
 	if (locked)
 		spin_unlock(&uap->port.lock);
 	local_irq_restore(flags);
-
+#endif
 	clk_disable(uap->clk);
 }
 

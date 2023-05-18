@@ -108,10 +108,14 @@ netlink_skb_clone(struct sk_buff *skb, gfp_t gfp_mask)
  *	use enormous buffer sizes on recvmsg() calls just to avoid
  *	MSG_TRUNC when PAGE_SIZE is very large.
  */
+#if defined(CONFIG_BCM_KF_512MB_DDR) && defined(CONFIG_BCM_512MB_DDR)
+#define NLMSG_GOODSIZE	SKB_WITH_OVERHEAD(4096UL)
+#else
 #if PAGE_SIZE < 8192UL
 #define NLMSG_GOODSIZE	SKB_WITH_OVERHEAD(PAGE_SIZE)
 #else
 #define NLMSG_GOODSIZE	SKB_WITH_OVERHEAD(8192UL)
+#endif
 #endif
 
 #define NLMSG_DEFAULT_SIZE (NLMSG_GOODSIZE - NLMSG_HDRLEN)
@@ -141,6 +145,14 @@ struct netlink_notify {
 
 struct nlmsghdr *
 __nlmsg_put(struct sk_buff *skb, u32 portid, u32 seq, int type, int len, int flags);
+
+#define NLMSG_NEW(skb, pid, seq, type, len, flags) \
+({	if (unlikely(skb_tailroom(skb) < (int)NLMSG_SPACE(len))) \
+		goto nlmsg_failure; \
+	__nlmsg_put(skb, pid, seq, type, len, flags); })
+
+#define NLMSG_PUT(skb, pid, seq, type, len) \
+	NLMSG_NEW(skb, pid, seq, type, len, 0)
 
 struct netlink_dump_control {
 	int (*start)(struct netlink_callback *);

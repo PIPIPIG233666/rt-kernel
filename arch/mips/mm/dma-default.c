@@ -72,6 +72,11 @@ static inline int cpu_needs_post_dma_flush(struct device *dev)
 	return !plat_device_is_coherent(dev) &&
 	       (boot_cpu_type() == CPU_R10000 ||
 		boot_cpu_type() == CPU_R12000 ||
+#if defined(CONFIG_BCM_KF_MIPS_BCM963XX)
+		boot_cpu_type() == CPU_BMIPS3300 ||
+		boot_cpu_type() == CPU_BMIPS4350 ||
+		boot_cpu_type() == CPU_BMIPS4380 ||
+#endif
 		boot_cpu_type() == CPU_BMIPS5000);
 }
 
@@ -88,20 +93,19 @@ static gfp_t massage_gfp_flags(const struct device *dev, gfp_t gfp)
 	else
 #endif
 #if defined(CONFIG_ZONE_DMA32) && defined(CONFIG_ZONE_DMA)
-	     if (dev == NULL || dev->coherent_dma_mask < DMA_BIT_MASK(32))
+	     if (dev->coherent_dma_mask < DMA_BIT_MASK(32))
 			dma_flag = __GFP_DMA;
 	else if (dev->coherent_dma_mask < DMA_BIT_MASK(64))
 			dma_flag = __GFP_DMA32;
 	else
 #endif
 #if defined(CONFIG_ZONE_DMA32) && !defined(CONFIG_ZONE_DMA)
-	     if (dev == NULL || dev->coherent_dma_mask < DMA_BIT_MASK(64))
+	     if (dev->coherent_dma_mask < DMA_BIT_MASK(64))
 		dma_flag = __GFP_DMA32;
 	else
 #endif
 #if defined(CONFIG_ZONE_DMA) && !defined(CONFIG_ZONE_DMA32)
-	     if (dev == NULL ||
-		 dev->coherent_dma_mask < DMA_BIT_MASK(sizeof(phys_addr_t) * 8))
+	     if (dev->coherent_dma_mask < DMA_BIT_MASK(sizeof(phys_addr_t) * 8))
 		dma_flag = __GFP_DMA;
 	else
 #endif

@@ -94,7 +94,11 @@ struct cpuinfo_mips {
 } __attribute__((aligned(SMP_CACHE_BYTES)));
 
 extern struct cpuinfo_mips cpu_data[];
+#if defined(CONFIG_BCM_KF_CPU_DATA_CPUID)
+#define current_cpu_data cpu_data[raw_smp_processor_id()]
+#else
 #define current_cpu_data cpu_data[smp_processor_id()]
+#endif
 #define raw_current_cpu_data cpu_data[raw_smp_processor_id()]
 #define boot_cpu_data cpu_data[0]
 
@@ -102,7 +106,7 @@ extern void cpu_probe(void);
 extern void cpu_report(void);
 
 extern const char *__cpu_name[];
-#define cpu_name_string()	__cpu_name[raw_smp_processor_id()]
+#define cpu_name_string()	__cpu_name[smp_processor_id()]
 
 struct seq_file;
 struct notifier_block;
